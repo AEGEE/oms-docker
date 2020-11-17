@@ -227,6 +227,221 @@ For better development experience: the files in your _HOST_ folder `MyAEGEE` are
 
 Make sure however to use an extension in your IDE called [editorconfig](https://editorconfig.org/#download)! It will avoid pains especially if your _HOST_ is a windows machine.
 
+### Configure git and GitHub on your computer
+- setup an SSH key to talk to GitHub [documentation](https://docs.github.com/en/free-pro-team@latest/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account). It is possible to use HTTPS if you prefer or if SSH is blocked for you. SSH access allows you never to have to enter your password on pull and push operations
+- edit your local configuration:
+    - a global gitignore adapted to your OS, so that temp files don't get committed. Have a look at [how to setup the .gitignore file](https://docs.github.com/en/free-pro-team@latest/github/using-git/ignoring-files) as well as [the rules to put in that file](https://github.com/github/gitignore)
+    - configure a name and email address you're willing to disclose in the history. GitHub offers you the possibility to use an anonymous address. [This article](https://docs.github.com/en/free-pro-team@latest/github/setting-up-and-managing-your-github-user-account/setting-your-commit-email-address) explains both possibilities.
+
+
+### Local repositories' organization on the filesystem
+
+The `MyAEGEE` repository contains several git submodules. Submodules are roughly pointers to specific versions of other git repositories. You will most probably **not** commit to the current repository, but you will rather make edits on the frontend, events, or discounts repositories.
+
+```bash
+# steps from the readme
+git clone --recursive git@github.com:AEGEE/MyAEGEE.git
+cd MyAEGEE
+# do a second clone of the repos that are of interest
+mkdir myRepoClones
+cd myRepoClones
+git clone git@github.com:AEGEE/core.git
+git clone git@github.com:AEGEE/events.git
+git clone git@github.com:AEGEE/frontend.git
+git clone git@github.com:AEGEE/statutory.git
+# so that git does not complain about changes when using git from the "MyAegee" folder.
+echo "**" > .gitignore
+```
+
+The folder structure you should have after running the steps above looks like this (the output below was trimmed a bit)
+```
+user@computer:~/Documents/aegee/MyAEGEE$ tree -L 2 -a
+.
+├── base-docker-compose.yml
+├── .circleci
+│   └── config.yml
+├── core
+│   ├── CHANGELOG.md
+│   └── .yamllint.yml
+├── .env
+├── .env.example
+├── events
+│   ├── apiary.apib
+│   └── .yamllint.yml
+├── helper.sh
+├── Makefile
+├── monitor
+│   └── docker
+├── myRepoClones
+│   ├── core
+│   ├── discounts
+│   ├── events
+│   ├── frontend
+│   ├── .gitignore
+│   └── statutory
+├── oms-global
+(...)
+```
+
+Edit the `.env` file and add the second section below the "Paths in the filesystem"
+```yaml
+# Paths in the filesystem
+PATH_GATEWAYS=gateways/docker/
+PATH_CORE=core/docker/
+PATH_EVENTS=events/docker/
+PATH_STATUTORY=statutory/docker
+PATH_FRONTEND=frontend/docker/
+PATH_DISCOUNTS=discounts/docker/
+PATH_MAILER=mailer/docker/
+PATH_PASS_MANAGER=pass-manager/docker/
+PATH_MONITOR=monitor/docker/
+PATH_GSUITE_WRAPPER=gsuite-wrapper/docker/
+PATH_OMS_ELASTIC=oms-elastic/docker/
+
+# My private repos, overriding the default paths
+PATH_EVENTS=myRepoClones/events/docker/
+PATH_FRONTEND=myRepoClones/frontend/docker/
+#PATH_STATUTORY=myRepoClones/statutory/docker
+```
+
+With this setup, you can easily override the code running in production (= the code in the submodules) with the one you have locally (the repos in `myRepoClones`). Having duplicated keys in a `.env` will be displayed as a warning in your IDE, so you will notice through IDE warnings when you are overriding repositories and when you are using the version in production. In the example above, I'm using my own version of events and frontend, but the prod version of statutory.
+
+After a change to the `.env` file, you need to run `make start` on the _GUEST_.
+
+### Update the local repositories
+
+Changes happen on all the repositories, and while breaking changes are the exception rather than the norm, it is good practise to update all your repositories every once in a while, especially the `MyAEGEE` one, since it's the one running in production.
+
+1. To update your copies of the submodules
+```
+  user@computer:~/Documents/aegee/MyAEGEE$ cd myRepoClones/discounts/
+  user@computer:~/Documents/aegee/MyAEGEE/myRepoClones/discounts$ git checkout master
+Already on 'master'
+Your branch is up to date with 'origin/master'.
+  user@computer:~/Documents/aegee/MyAEGEE/myRepoClones/discounts$ git pullremote: Enumerating objects: 63, done.
+remote: Counting objects: 100% (63/63), done.
+remote: Compressing objects: 100% (62/62), done.
+remote: Total 63 (delta 35), reused 15 (delta 1), pack-reused 0
+Unpacking objects: 100% (63/63), done.
+From github.com:AEGEE/discounts
+   5dcfa5d..0d8bdfa  master     -> origin/master
+ * [new branch]      dependabot/npm_and_yarn/eslint-plugin-react-7.21.2 -> origin/dependabot/npm_and_yarn/eslint-plugin-react-7.21.2
+Updating 5dcfa5d..0d8bdfa
+Fast-forward
+ config/index.js                          |    1 -
+ lib/bugsnag.js                           |    4 +-
+ lib/middlewares.js                       |    4 +-
+ lib/server.js                            |    4 +-
+ models/Category.js                       |    2 +-
+ package-lock.json                        | 1910 +++++++++++++++---------------
+ package.json                             |   20 +-
+ test/api/codes-claiming.test.js          |    1 -
+ test/api/integrations-population.test.js |    1 -
+ test/api/metrics.test.js                 |    1 -
+ test/scripts/mock.js                     |    1 -
+ 11 files changed, 969 insertions(+), 980 deletions(-)
+  user@computer:~/Documents/aegee/MyAEGEE/myRepoClones/discounts$
+
+# next step: merge master in your local branch, or rebase your local branches on top on this fresh master
+```
+
+2. To update the MyAEGEE repository
+We need to update the repository as well as all of its submodules with the `git pull --recurse-submodules` command, which will give an output similar to this.
+```
+user@computer:~/Documents/aegee/MyAEGEE$ git pull --recurse-submodules
+remote: Enumerating objects: 3, done.
+remote: Counting objects: 100% (3/3), done.
+remote: Compressing objects: 100% (3/3), done.
+remote: Total 3 (delta 0), reused 3 (delta 0), pack-reused 0
+Unpacking objects: 100% (3/3), done.
+From https://github.com/AEGEE/MyAEGEE
+ * [new branch]      make_add_discounts -> origin/make_add_discounts
+Fetching submodule core
+From https://github.com/AEGEE/core
+ * [new branch]      dependabot/npm_and_yarn/eslint-plugin-mocha-8.0.0 -> origin/dependabot/npm_and_yarn/eslint-plugin-mocha-8.0.0
+ * [new branch]      dependabot/npm_and_yarn/eslint-plugin-react-7.21.2 -> origin/dependabot/npm_and_yarn/eslint-plugin-react-7.21.2
+   d7a8e54..ebd284b  master     -> origin/master
+ * [new tag]         1.26.0     -> 1.26.0
+Fetching submodule discounts
+Fetching submodule events
+From https://github.com/AEGEE/events
+   2548876..f5ab1ad  master     -> origin/master
+Fetching submodule gateways/docker/portal/files
+Fetching submodule mailer
+Fetching submodule statutory
+From https://github.com/AEGEE/statutory
+Already up to date.
+
+```
+If you want to test the website with all the latest versions, remember to disable your own copies of the sub repositories and redeploy, as described in section [Local repositories' organization on the filesystem](#local-repositories-organization-on-the-filesystem)
+
+### Feature development: submit your first pull request
+
+Discuss with us on Jira about taking a task, and get it assigned to yourself. It will have an identifier like "MA-999" or "HELP-425". For the following example, let's assume we need to work on MA-999, which fixes a bug on statutory.
+
+Set the status of the bug to "IN PROGRESS" once you start working on it. The example below shows the usual git workflow: create a branch, edit a few files, commit those files, and open a Pull Request (PR) on GitHub for others to review.
+
+```txt
+user@computer:~/Documents/aegee/MyAEGEE$ cd myRepoClones/statutory/
+
+# create a new branch in our copied repo, not in the submodule one
+user@computer:~/Documents/aegee/MyAEGEE/myRepoClones/statutory$ git checkout -b MA-999/new_feature_cool_stuff
+
+# (edit some files in order to fix the bug...)
+
+# git commit: the linting will execute: make sure that your commit messages respects the naming rules
+$ git add -uv
+$ git commit
+$ git push -u origin MA-999/new_feature_cool_stuff
+
+Go to Github, and create a PR in the AEGEE/statutory repo.
+```
+After your push, go to Jira, and set the status of the bug to "AWAITING REVIEW".
+
+### Development tools
+
+#### IDE
+
+We recommend using an IDE for development. This will speed up your work by a lot. There are many options out there:
+- [Visual Studio Code](https://code.visualstudio.com/)
+- [WebStorm](https://www.jetbrains.com/webstorm/nextversion/): use EAP versions or a student license: both options are fine because the project is open-source and non-commercial.
+
+#### PgAdmin: tool to inspect the PostgreSQL database
+
+This tool is useful to see the state of the database: its schemas, and also the content.
+
+It is already installed for you in the _GUEST_ machine, and available on [http://pgadmin.appserver.test/browser/](http://pgadmin.appserver.test/browser/#) (in the _HOST_ browser)
+We have several database containers = several database servers. They all use the `postgres:10` image (visible on [http://portainer.appserver.test/#/containers](http://portainer.appserver.test/#/containers))
+- myaegee_postgres-statutory_1
+- myaegee_postgres-core_1
+- myaegee_postgres-discounts_1
+- myaegee_postgres-events_1
+
+In the pgadmin UI, you must thus create four servers to read all the data.
+
+In the main UI, right-click on Servers (0), and click `Create -> Server`. Give it a name (example: statutory): this name is only for you to read in the UI.
+Click on the `Connection` tab:
+- hostname/address: `postgres-statutory`. This value comes from the `current-config.yml` file. (another way is to take the container name, and remove the leading `myaegee_` and trailing `_1`)
+- username: `postgres`
+- password: `5ecr3t`
+
+The values to write can be found in the `current-config.yml` file.
+```yaml
+ postgres-statutory:
+    environment:
+      POSTGRES_PASSWORD: 5ecr3t
+      POSTGRES_USER: postgres
+    expose:
+    - '5432'
+    image: postgres:10
+    restart: always
+    volumes:
+    - postgres-statutory:/var/lib/postgresql/data:rw
+```
+
+After confirming the connection to the server, you will find the tables in `statutory (the name you gave) -> Databases -> statutory -> Schemas -> public -> Tables`.
+
+You may check the pgadmin documentation on [using the query tool](https://www.pgadmin.org/docs/pgadmin4/latest/query_tool.html) and on [viewing and editing data](https://www.pgadmin.org/docs/pgadmin4/latest/editgrid.html).
 
 ## Contribute
 [You can read more about contributing on our confluence.](https://myaegee.atlassian.net/wiki/spaces/GENERAL/overview)
@@ -341,7 +556,7 @@ You can use `5ecr3t` for a password reset token (for a member with email `passwo
 
 **NOTICE** if you use the `--fast` mode of `start.sh`, then core does NOT provision in production mode, so you will be fast in bootstrapping but without users to play with. This should not be an issue for you if you are interested in only the infrastructure work; if you however need a user, you can register yourself.
 
-## How to reset the database and recreate
+## How to reset the database and recreate
 
 A couple of options
 
